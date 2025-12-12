@@ -6,11 +6,20 @@
 
 <link rel="icon" type="image/x-icon" href="./material/life/heart.png">
 
-<!-- Title Screen -->
-<img id="titleScreen" src="./material/TypeSpaceTitle.jpg" alt="titleScreens">
-
 <!-- Creates canvas with specified margines -->
 <canvas id="canV" width=1920 height=1080></canvas>
+
+<!-- Game Over Overlay -->
+<div id="gameOverScreen" class="game-over-overlay" style="display: none;">
+    <div class="game-over-content">
+        <h1>GAME OVER</h1>
+        <p id="finalScore">Score: 0</p>
+        <button id="playAgainBtn">Play Again</button>
+    </div>
+</div>
+
+<!-- Mesa SDK -->
+<script src="sdk/mesa-sdk.js"></script>
 
 <!-- Loads and runs javascript file "index.js" -->
 <script type="module" src="index.js">

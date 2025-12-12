@@ -1,32 +1,34 @@
-// Import modules used to connect to Firestore/Firebase Database
+// Mesa SDK is loaded via script tag in index.html
 
-import {
-    initializeApp
-} from 'https://www.gstatic.com/firebasejs/9.8.4/firebase-app.js'
-import {
-    getFirestore,
-    collection,
-    query,
-    where,
-    onSnapshot,
-    doc,
-    setDoc,
-    getDoc,
-    orderBy,
-    limit
-} from 'https://www.gstatic.com/firebasejs/9.8.4/firebase-firestore.js'
+// Music reference at module scope for control during restart
+let music = null;
 
-// Database connection credentials and addresses [KEYS HAVE BEEN REPLACED - REAL KEYS DON'T WORK ANYMORE ANYWAYS]
+// DOM refs (initialized in startGame)
+let canvas = null;
+let c = null;
+let gameOverScreen = null;
+let finalScoreElement = null;
+let playAgainBtn = null;
 
-const firebaseConfig = {
-    apiKey: "AIzaSyDzkjadfa3lVe__0qb4sy-9gNQVeRP5GXz8",
-    authDomain: "calesi-bffs50.firebaseapp.com",
-    projectId: "calesi-bd5a0",
-    storageBucket: "calesi-bd5a0.appspot.com",
-    messagingSenderId: "447612983536",
-    appId: "1:447623583536:web:dc3e7570c3182c129a8a35",
-    measurementId: "G-T4F0T1QG2K"
-};
+// Game state
+let gameOver = false; // loops game if gameOver = false
+let scoreSubmitted = false; // track if score has been submitted to prevent duplicate submissions
+let velocity = 1;
+let lifeFrequency = 0;
+
+// Game objects (initialized in initGameObjects)
+let input = null;
+let score = null;
+let player = null;
+let actors = null;
+let life = null;
+
+function ensureMusicPlaying() {
+    if (!music) return;
+    if (!music.paused) return;
+    // Autoplay can be blocked locally; retrying on user input is allowed
+    music.play().catch(() => {});
+}
 
 
 
@@ -56,73 +58,84 @@ const words = [
 
 
 
-// Establish connection credentials
-
-initializeApp(firebaseConfig)
-const db = getFirestore()
-
-
-// Play looped music when the site loads.
-
-const music = new Audio('./material/audio/spaceRace.mp3');
-music.loop = true;
-music.play()
-
-
-// Retreives canvas element from HTML
-
-var canvas = document.getElementById("canV");
-var c = canvas.getContext("2d");
-const titleScreen = document.getElementById('titleScreen');
-
-
-let gameOver = false; // loops game if gameOver = false
-
-
-const q = query(collection(db, "playerScores"), orderBy("score", "desc"), limit(3)); // gets top 3 scores from database
-
-var unsubscribe1 = onSnapshot(q, (querySnapshot) => {
-    // add black background to highscores
-    c.fillStyle = 'black';
-    c.fillRect(590, 810, 340, 50);
-    c.fillRect(320, 880, 1300, 50);
-    // print out 'high score'
-    c.font = +parseInt((50)) + 'px monospace';
-    c.fillStyle = 'white';
-    c.fillText('HIGH SCORES:', 600, 850);
-    // add each high score with added text to a string
-    let ranked = 1
-    let firstStr = '';
-    querySnapshot.forEach((doc) => {
-            firstStr += ranked + '.' + doc.data().username + ':' + doc.data().score + "  "
-            ranked += 1
-        })
-        // print out string of highest scores
-    c.fillText(firstStr, 400, 920);
-});
-
-var game_start = 0;
-canvas.addEventListener('click', function() {
-    if (game_start == 0){
-        titleScreen.style.display = 'none';
-        update(); //Start rendering
-        game_start = 1
+// Initialize Mesa SDK (optional - game works without it)
+async function initMesaSDK() {
+    try {
+        if (window.Mesa) {
+            await window.Mesa.init();
+            console.log('Mesa SDK initialized');
+        } else {
+            console.log('Mesa SDK not available - running in standalone mode');
+        }
+    } catch (e) {
+        console.warn('Mesa SDK init failed:', e);
     }
-})
+}
 
-// Sets canvas dimensions
+function initDomRefs() {
+    canvas = document.getElementById("canV");
+    if (!canvas) {
+        throw new Error('Canvas element #canV not found');
+    }
+    c = canvas.getContext("2d");
+    if (!c) {
+        throw new Error('2D canvas context not available');
+    }
 
-canvas.width = 1920 //window.innerWidth
-canvas.height = 1080 //window.innerHeight
+    gameOverScreen = document.getElementById('gameOverScreen');
+    finalScoreElement = document.getElementById('finalScore');
+    playAgainBtn = document.getElementById('playAgainBtn');
 
-// Specifies canvas' font attributes.
+    // Sets canvas dimensions
+    canvas.width = 1920; // window.innerWidth
+    canvas.height = 1080; // window.innerHeight
 
-c.textAlign = "left";
-c.fillStyle = "white";
+    // Specifies canvas' font attributes.
+    c.textAlign = "left";
+    c.fillStyle = "white";
 
-// Standard velocity.
+    // Bind UI
+    if (playAgainBtn) {
+        playAgainBtn.addEventListener('click', resetGame);
+    }
+}
 
-var velocity = 1;
+function initGameObjects() {
+    // Initialize input + one-time key listener
+    input = new Input();
+    input.checkForInput();
+
+    // Initialize game objects
+    score = new Score();
+    player = new Player();
+    actors = new Actors();
+    life = new Life();
+
+    // Reset state vars
+    gameOver = false;
+    scoreSubmitted = false;
+    velocity = 1;
+    lifeFrequency = 0;
+}
+
+// Start the game when page loads
+function startGame() {
+    initDomRefs();
+    initGameObjects();
+
+    // Play looped music (best-effort; may be blocked until user input)
+    music = new Audio('./material/audio/spaceRace.mp3');
+    music.loop = true;
+    music.play().catch(() => {});
+
+    // Initialize Mesa SDK (don't wait for it)
+    initMesaSDK();
+
+    // Start the game immediately
+    update();
+}
+
+
 
 
 
@@ -307,11 +320,13 @@ class Life {
     on the screen, and handles adding and removing life points.*/
 
     constructor() {
-
         this.life = 3 // set starting lives amount
-        this.image;
+        this.image = null;
+        // Initialize position with defaults to prevent race condition
+        this.position = { x: 10, y: 75 };
+        this.width = 0;
+        this.height = 0;
         this.loadImage()
-
     }
 
     // This method substracts a life point from the players current life.
@@ -352,9 +367,7 @@ class Life {
         }
 
         image.onload = () => {
-
             // Sets the life image's size and position.
-
             this.image = image
             this.width = image.width
             this.height = image.height
@@ -368,8 +381,10 @@ class Life {
     // This medthod draws on the screen how many life points the player currently has.
 
     draw() {
-
         this.loadImage()
+
+        // Guard: don't draw if image hasn't loaded yet
+        if (!this.image || !this.width || !this.height) return;
 
         c.drawImage(
             this.image,
@@ -476,29 +491,7 @@ class Meteor {
     constructor() {
 
 
-        /* Since there are roughly 6300 words in the database, this variable chooses a random number
-        from 0 to 6300. */
-
-        this.randomNumber = (Math.floor(Math.random() * 6300)) + 1
-
-        // A word from the database is picked whose id matches the "randomNumber" value.
-
-        this.q = query(collection(db, "words"), where("id", "==", this.randomNumber));
-        // console.log('word from database' + this.q);
-        this.unsubscribe = onSnapshot(this.q, (querySnapshot) => {
-            querySnapshot.forEach((doc) => {
-                this.word = doc.data().word; // Word is assigned to meteor.
-                // console.log('random word' + this.word);
-                // this.playerScore = doc.data().playerScore;
-                // console.log(this.playerScore);
-            })
-        });
-
-
-        //*******************IMPORTANT*****************************/
-        // SINCE THE FIREBASE DATBASE ISN'T HOSTED ANYMORE, WE WILL HARDCODE A FEW WORDS IN A LIST.
-
-        // Select a random word from the list of words. (this line would be commented out if database wasn't offline.)
+        // Select a random word from the list of words.
         this.word = words[(Math.floor(Math.random() * 19)) + 1]
 
         // The "speeder" variable chooses a random value, later to be used to randomize object velocity.
@@ -583,26 +576,7 @@ class LifeBonus {
 
     constructor() {
 
-        /* Since there are roughly 6300 words in the database, this variable chooses a random number
-        from 0 to 6300. */
-
-        this.randomNumber = (Math.floor(Math.random() * 6300)) + 1
-
-        // A word from the database is picked whose id matches the "randomNumber" value.
-
-        this.q = query(collection(db, "words"), where("id", "==", this.randomNumber));
-        this.unsubscribe = onSnapshot(this.q, (querySnapshot) => {
-            querySnapshot.forEach((doc) => {
-                // console.log(doc.data().word);
-                this.word = doc.data().word; // Word is assigned to meteor.
-            })
-        });
-
-
-        //*******************IMPORTANT*****************************/
-        // SINCE THE FIREBASE DATBASE ISN'T HOSTED ANYMORE, WE WILL HARDCODE A FEW WORDS IN A LIST.
-
-        // Select a random word from the list of words. (this line would be commented out if database wasn't offline.)
+        // Select a random word from the list of words.
         this.word = words[(Math.floor(Math.random() * 19)) + 1]
 
 
@@ -887,7 +861,7 @@ class Input {
 
     // Converts the list targetWord into a string and then calls checkActorMatch to possibly delete actors
 
-    checkWord(life) {
+    checkWord() {
 
         // basically check to see if this word is in any of the meteors, delete the meteors that it matches
 
@@ -913,14 +887,20 @@ class Input {
 
     // Event listener, handle input, deal with letters, backspace, and enter/spacebar
 
-    checkForInput(life) {
+    checkForInput() {
         document.addEventListener('keydown', function(e) {
+            // First user interaction: try to enable audio (fixes local autoplay restrictions)
+            ensureMusicPlaying();
+
+            // Ignore input when game is over
+            if (gameOver) return;
+            
             switch (e.keyCode) {
                 case 13: // enter
-                    input.checkWord(life);
+                    input.checkWord();
                     break;
                 case 32: // spacebar
-                    input.checkWord(life);
+                    input.checkWord();
                     break;
                 case 8: // backspace
                     input.deleteLetter();
@@ -1009,34 +989,30 @@ class Input {
 }
 
 
-// Initialize input class.
-const input = new Input();
-
-// Initialize score class.
-const score = new Score()
-
-// Initialize Player class.
-const player = new Player()
-
-// Initialize class for moving actors.
-const actors = new Actors();
-
-//Initialize life class.
-const life = new Life();
-
-
-
-
-
-
-
-//Start keyboard key listeners
-
-input.checkForInput(life)
-
-/* Initialize "lifeFrequency" variable at value 0.
-The "lifeFrequency" variable holds a value that determines whether or not a bonus life spawns.*/
-var lifeFrequency = 0;
+// Function to reset the game
+function resetGame() {
+    // Reset game state
+    gameOver = false;
+    scoreSubmitted = false;
+    velocity = 1;
+    lifeFrequency = 0;
+    
+    // Recreate game objects (keep existing key listener, so do NOT call checkForInput again)
+    input = new Input();
+    score = new Score();
+    player = new Player();
+    actors = new Actors();
+    life = new Life();
+    ensureMusicPlaying();
+    
+    // Hide game over screen
+    if (gameOverScreen) {
+        gameOverScreen.style.display = 'none';
+    }
+    
+    // Restart the game loop
+    update();
+}
 
 
 
@@ -1232,36 +1208,39 @@ function update() {
 
     
     if (gameOver){
-        const username = prompt("Enter your username:", "Username")
-        const playerData = {
-            username: username.toUpperCase(),
-            score: Math.floor(score.getScore())
-        }
-        const docRef = doc(db, "playerScores", username.toUpperCase());
-
-
-        getDoc(docRef).then(docSnap => {
-
-            c.fillText('GAME OVER', 850, 500);
-
-            if (docSnap.exists()) {
-                if (docSnap.data().score <= score.getScore()) {
-
-                    setDoc(doc(db, "playerScores", username.toUpperCase()), playerData)
-
-                    c.fillText('YOUR HIGH SCORE: ' + Math.floor(score.getScore()), 850, 600);
-                } else {
-                    c.fillText('YOUR HIGH SCORE: ' + docSnap.data().score, 850, 600);
+        // Submit score to Mesa leaderboard (only once)
+        if (!scoreSubmitted) {
+            scoreSubmitted = true;
+            const finalScore = Math.floor(score.getScore());
+            
+            // Submit to Mesa leaderboard if SDK is available and user is logged in
+            if (window.Mesa && window.Mesa.user) {
+                const user = window.Mesa.user.get();
+                const isLoggedIn = window.Mesa.user.isLoggedIn();
+                const playerName = user && user.username ? user.username : 'Player';
+                
+                if (isLoggedIn) {
+                    window.Mesa.leaderboard.submit({
+                        key: 'default',
+                        playerName: playerName,
+                        displayValue: finalScore.toString(),
+                        sortValue: finalScore
+                    }).then(result => {
+                        if (result.error) {
+                            console.warn('Failed to submit score:', result.error);
+                        }
+                    });
                 }
-                } else {
-
-                    setDoc(doc(db, "playerScores", username.toUpperCase()), playerData)
-
-                    c.fillText('YOUR HIGH SCORE: ' + Math.floor(score.getScore()), 850, 600);
-                }
-                c.fillText('YOUR SCORE: ' + Math.floor(score.getScore()), 850, 650);
-            })
+            }
+            
+            // Show game over screen
+            finalScoreElement.textContent = `Score: ${finalScore}`;
+            gameOverScreen.style.display = 'flex';
         }
+        
+        // Don't continue the game loop
+        return;
+    }
     
 
 
@@ -1278,3 +1257,10 @@ function update() {
 
 
 
+
+// Start when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startGame);
+} else {
+    startGame();
+}
