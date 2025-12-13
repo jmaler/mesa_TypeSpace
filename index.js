@@ -24,10 +24,21 @@ let actors = null;
 let life = null;
 
 function ensureMusicPlaying() {
-    if (!music) return;
+    if (!music) {
+        console.warn('[Audio] Music object not initialized');
+        return;
+    }
     if (!music.paused) return;
-    // Autoplay can be blocked locally; retrying on user input is allowed
-    music.play().catch(() => {});
+    
+    // Autoplay can be blocked by browser/iframe policies; retrying on user input
+    music.play()
+        .then(() => {
+            console.log('[Audio] Music playback started successfully');
+        })
+        .catch((err) => {
+            // Expected in iframes with restrictive Feature Policy
+            console.warn('[Audio] Autoplay blocked (normal in embedded games):', err.message || err.name);
+        });
 }
 
 
@@ -46,7 +57,11 @@ const words = [
     'APPLE', 'BANANA', 'CARROT', 'DAISY', 'ELEPHANT', 'FROG',
     'GRAPE', 'HAPPY', 'IGLOO', 'JUMP', 'KITE', 'LEMON',
     'MONKEY', 'NEST', 'ORANGE', 'PURPLE', 'QUICK', 'RABBIT',
-    'SUN', 'TURTLE'
+    'SUN', 'TURTLE', 'MOUSE',
+    'RED', 'BLUE', 'CAT', 'DOG', 'FISH',
+    'GARDEN', 'ROCKET', 'SCHOOL', 'SUMMER', 'WINTER',
+    'FRIEND', 'FLOWER', 'YELLOW', 'BUTTERFLY', 'DOLPHIN',
+    'MOUNTAIN', 'ADVENTURE', 'UNIVERSE', 'ASTRONAUT', 'RAINBOW'
   ];
 
 
@@ -120,13 +135,51 @@ function initGameObjects() {
 
 // Start the game when page loads
 function startGame() {
-    initDomRefs();
-    initGameObjects();
+    console.log('[TypeSpace] === GAME STARTUP ===');
+    console.log('[TypeSpace] Environment:', {
+        inIframe: window.parent !== window,
+        mesaSDKAvailable: !!window.Mesa,
+        userAgent: navigator.userAgent.substring(0, 50) + '...'
+    });
 
-    // Play looped music (best-effort; may be blocked until user input)
-    music = new Audio('./material/audio/spaceRace.mp3');
-    music.loop = true;
-    music.play().catch(() => {});
+    try {
+        initDomRefs();
+        console.log('[TypeSpace] DOM refs initialized:', {
+            canvas: !!canvas,
+            gameOverScreen: !!gameOverScreen,
+            finalScoreElement: !!finalScoreElement,
+            playAgainBtn: !!playAgainBtn
+        });
+    } catch (e) {
+        console.error('[TypeSpace] FATAL: DOM initialization failed:', e);
+        return; // Cannot proceed without DOM
+    }
+
+    try {
+        initGameObjects();
+        console.log('[TypeSpace] Game objects initialized');
+    } catch (e) {
+        console.error('[TypeSpace] FATAL: Game object initialization failed:', e);
+        return;
+    }
+
+    console.log('[TypeSpace] Game loaded (Mesa Fix v1.1.0)');
+
+    // Play looped music with comprehensive error handling
+    try {
+        music = new Audio('./material/audio/spaceRace.mp3');
+        music.loop = true;
+        music.volume = 0.5; // Start at 50% volume
+        
+        music.play()
+            .then(() => console.log('[Audio] Background music started'))
+            .catch((err) => {
+                console.warn('[Audio] Autoplay blocked (will retry on user interaction):', err.name);
+            });
+    } catch (e) {
+        console.error('[Audio] Failed to create Audio object:', e);
+        music = null; // Ensure game can continue without music
+    }
 
     // Initialize Mesa SDK (don't wait for it)
     initMesaSDK();
@@ -342,8 +395,12 @@ class Life {
         if (this.life != 5)
             this.life += 1
         player.frameCounter = 15
-        let healAudio = new Audio('./material/audio/heal.wav')
-        healAudio.play()
+        try {
+            let healAudio = new Audio('./material/audio/heal.wav');
+            healAudio.play().catch(() => {}); // May fail in iframe
+        } catch (e) {
+            // Audio not available - continue without sound
+        }
     }
 
     // This method returns the amount of life points the player currently has.
@@ -492,7 +549,7 @@ class Meteor {
 
 
         // Select a random word from the list of words.
-        this.word = words[(Math.floor(Math.random() * 19)) + 1]
+        this.word = words[Math.floor(Math.random() * words.length)]
 
         // The "speeder" variable chooses a random value, later to be used to randomize object velocity.
 
@@ -577,7 +634,7 @@ class LifeBonus {
     constructor() {
 
         // Select a random word from the list of words.
-        this.word = words[(Math.floor(Math.random() * 19)) + 1]
+        this.word = words[Math.floor(Math.random() * words.length)]
 
 
         // The "speeder" variable chooses a random value, later to be used to randomize object velocity.
@@ -637,9 +694,13 @@ class Laser {
 
         // Play laser sound effect when laser is created.
 
-        const laserAudio = new Audio('./material/audio/laser.mp3');
-        laserAudio.volume = .2
-        laserAudio.play()
+        try {
+            const laserAudio = new Audio('./material/audio/laser.mp3');
+            laserAudio.volume = 0.2;
+            laserAudio.play().catch(() => {}); // May fail in iframe
+        } catch (e) {
+            // Audio not available - continue without sound
+        }
     }
 
 
@@ -755,8 +816,12 @@ class Actors {
     destroyMeteor(index) {
         var xPosition = this.meteors[index].x
         var yPosition = this.meteors[index].y
-        var audio = new Audio('./material/audio/explosion.wav');
-        audio.play();
+        try {
+            var audio = new Audio('./material/audio/explosion.wav');
+            audio.play().catch(() => {}); // May fail in iframe
+        } catch (e) {
+            // Audio not available - continue without sound
+        }
         this.addExplosion(xPosition, yPosition)
         this.meteors.splice(index, 1);
     }
@@ -1234,8 +1299,14 @@ function update() {
             }
             
             // Show game over screen
-            finalScoreElement.textContent = `Score: ${finalScore}`;
-            gameOverScreen.style.display = 'flex';
+            if (finalScoreElement) {
+                finalScoreElement.textContent = `Score: ${finalScore}`;
+            }
+            if (gameOverScreen) {
+                gameOverScreen.style.display = 'flex';
+            } else {
+                console.error("Critical Error: gameOverScreen element not found in DOM");
+            }
         }
         
         // Don't continue the game loop
