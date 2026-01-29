@@ -62,6 +62,43 @@
   // Local leaderboard storage for local mode
   let localLeaderboards = {};
 
+  // Audio mute state
+  let isMuted = false;
+  let trackedAudioContexts = [];
+
+  // Monkey-patch AudioContext to track and control Web Audio API
+  (function patchAudioContext() {
+    const OriginalAudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!OriginalAudioContext) return;
+
+    function PatchedAudioContext(...args) {
+      const ctx = new OriginalAudioContext(...args);
+      trackedAudioContexts.push(ctx);
+
+      // Auto-suspend if currently muted
+      if (isMuted && ctx.state === 'running') {
+        ctx.suspend().catch(() => {});
+      }
+
+      return ctx;
+    }
+
+    // Copy prototype for instanceof checks
+    PatchedAudioContext.prototype = OriginalAudioContext.prototype;
+
+    // Copy static properties
+    Object.keys(OriginalAudioContext).forEach(key => {
+      try {
+        PatchedAudioContext[key] = OriginalAudioContext[key];
+      } catch (e) {}
+    });
+
+    window.AudioContext = PatchedAudioContext;
+    if (window.webkitAudioContext) {
+      window.webkitAudioContext = PatchedAudioContext;
+    }
+  })();
+
   // Helper to generate IDs
   function generateId() {
     return Math.random().toString(36).substring(2, 15);
@@ -370,6 +407,34 @@
       return;
     }
 
+    // Handle mute command from portal
+    if (data.type === 'mesa:audio:mute') {
+      isMuted = !!data.muted;
+      emit('mute', { muted: isMuted });
+
+      // Suspend/resume all tracked AudioContexts
+      trackedAudioContexts = trackedAudioContexts.filter(ctx => ctx.state !== 'closed');
+      trackedAudioContexts.forEach(ctx => {
+        try {
+          if (isMuted && ctx.state === 'running') {
+            ctx.suspend();
+          } else if (!isMuted && ctx.state === 'suspended') {
+            ctx.resume();
+          }
+        } catch (e) {}
+      });
+
+      // Auto-mute all audio/video elements if game doesn't handle it
+      try {
+        document.querySelectorAll('audio, video').forEach(el => {
+          el.muted = isMuted;
+        });
+      } catch (e) {
+        // Ignore errors
+      }
+      return;
+    }
+
     // Handle Responses
     if (data.requestId && pendingRequests.has(data.requestId)) {
       const { resolve, timer } = pendingRequests.get(data.requestId);
@@ -506,6 +571,7 @@
       getLocales: function() {
         // Returns ordered array of preferred locale codes (e.g. ['en_us', 'cs_cz'])
         return getUserLocales();
+        return { width: 1920, height: 1080, aspectRatio: '16:9' };
       },
       getContainerSize: function () {
         // Return actual iframe dimensions
@@ -642,6 +708,24 @@
       },
       loadingEnd: function () {
         Transport.send('mesa:game:event', { event: 'loadingEnd' });
+      },
+      /**
+       * Report the languages supported by this game.
+       * Used by portal to prefill language metadata during import or editing.
+       * @param {string[]} languages - Array of language codes (e.g., ['en', 'de', 'cs'])
+       */
+      reportLanguages: function (languages) {
+        if (!Array.isArray(languages)) {
+          console.warn('Mesa SDK: reportLanguages expects an array of language codes');
+          return;
+        }
+        // Validate language codes against known map
+        const validCodes = Object.keys(langCodeMap);
+        const validLanguages = languages.filter(lang => validCodes.includes(lang));
+        if (validLanguages.length !== languages.length) {
+          console.warn('Mesa SDK: Some language codes were invalid and filtered out');
+        }
+        Transport.send('mesa:game:languages', { languages: validLanguages });
       }
     },
 
@@ -666,6 +750,17 @@
        */
       error: function (...args) {
         console.error('%c Mesa ', 'background: #ef4444; color: white; border-radius: 3px; font-weight: bold;', ...args);
+      }
+    },
+
+    audio: {
+      /**
+       * Check if the portal has muted audio.
+       * Games should respect this and mute their audio when true.
+       * @returns {boolean} - true if muted
+       */
+      isMuted: function () {
+        return isMuted;
       }
     }
   };
