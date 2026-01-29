@@ -74,9 +74,11 @@
     function PatchedAudioContext(...args) {
       const ctx = new OriginalAudioContext(...args);
       trackedAudioContexts.push(ctx);
+      console.log('[Mesa SDK] AudioContext created and tracked, total:', trackedAudioContexts.length, 'state:', ctx.state);
 
       // Auto-suspend if currently muted
       if (isMuted && ctx.state === 'running') {
+        console.log('[Mesa SDK] Auto-suspending new AudioContext (muted)');
         ctx.suspend().catch(() => {});
       }
 
@@ -410,27 +412,35 @@
     // Handle mute command from portal
     if (data.type === 'mesa:audio:mute') {
       isMuted = !!data.muted;
+      console.log('[Mesa SDK] Mute command received:', { muted: isMuted, trackedContexts: trackedAudioContexts.length });
       emit('mute', { muted: isMuted });
 
       // Suspend/resume all tracked AudioContexts
       trackedAudioContexts = trackedAudioContexts.filter(ctx => ctx.state !== 'closed');
+      console.log('[Mesa SDK] Processing AudioContexts:', trackedAudioContexts.map(ctx => ({ state: ctx.state })));
       trackedAudioContexts.forEach(ctx => {
         try {
           if (isMuted && ctx.state === 'running') {
+            console.log('[Mesa SDK] Suspending AudioContext');
             ctx.suspend();
           } else if (!isMuted && ctx.state === 'suspended') {
+            console.log('[Mesa SDK] Resuming AudioContext');
             ctx.resume();
           }
-        } catch (e) {}
+        } catch (e) {
+          console.error('[Mesa SDK] AudioContext suspend/resume error:', e);
+        }
       });
 
       // Auto-mute all audio/video elements if game doesn't handle it
       try {
-        document.querySelectorAll('audio, video').forEach(el => {
+        const mediaElements = document.querySelectorAll('audio, video');
+        console.log('[Mesa SDK] Muting media elements:', mediaElements.length);
+        mediaElements.forEach(el => {
           el.muted = isMuted;
         });
       } catch (e) {
-        // Ignore errors
+        console.error('[Mesa SDK] Media element mute error:', e);
       }
       return;
     }
