@@ -1,5 +1,5 @@
 (function (window) {
-  const MESA_VERSION = '1.2.0';
+  const MESA_VERSION = '1.3.0';
   console.log('[Mesa SDK] Loading version', MESA_VERSION);
   const REQUEST_TIMEOUT = 5000;
 
@@ -66,6 +66,7 @@
   // Audio mute state
   let isMuted = false;
   let trackedAudioContexts = [];
+  let trackedAudioElements = [];
 
   // Monkey-patch AudioContext to track and control Web Audio API
   (function patchAudioContext() {
@@ -100,6 +101,31 @@
     if (window.webkitAudioContext) {
       window.webkitAudioContext = PatchedAudioContext;
     }
+  })();
+
+  // Monkey-patch Audio constructor to track HTML5 Audio elements
+  (function patchAudio() {
+    const OriginalAudio = window.Audio;
+    if (!OriginalAudio) return;
+
+    function PatchedAudio(src) {
+      const audio = new OriginalAudio(src);
+      trackedAudioElements.push(audio);
+      console.log('[Mesa SDK] Audio element created and tracked, total:', trackedAudioElements.length);
+
+      // Auto-mute if currently muted
+      if (isMuted) {
+        console.log('[Mesa SDK] Auto-muting new Audio element (muted)');
+        audio.muted = true;
+      }
+
+      return audio;
+    }
+
+    // Preserve prototype chain for instanceof checks
+    PatchedAudio.prototype = OriginalAudio.prototype;
+
+    window.Audio = PatchedAudio;
   })();
 
   // Helper to generate IDs
@@ -418,7 +444,7 @@
     // Handle mute command from portal
     if (data.type === 'mesa:audio:mute') {
       isMuted = !!data.muted;
-      console.log('[Mesa SDK] Mute command received:', { muted: isMuted, trackedContexts: trackedAudioContexts.length });
+      console.log('[Mesa SDK] Mute command received:', { muted: isMuted, trackedContexts: trackedAudioContexts.length, trackedAudioElements: trackedAudioElements.length });
       emit('mute', { muted: isMuted });
 
       // Suspend/resume all tracked AudioContexts
@@ -438,10 +464,20 @@
         }
       });
 
-      // Auto-mute all audio/video elements if game doesn't handle it
+      // Mute/unmute all tracked Audio elements (created via new Audio())
+      console.log('[Mesa SDK] Processing tracked Audio elements:', trackedAudioElements.length);
+      trackedAudioElements.forEach(audio => {
+        try {
+          audio.muted = isMuted;
+        } catch (e) {
+          console.error('[Mesa SDK] Audio element mute error:', e);
+        }
+      });
+
+      // Auto-mute all audio/video elements in DOM if game doesn't handle it
       try {
         const mediaElements = document.querySelectorAll('audio, video');
-        console.log('[Mesa SDK] Muting media elements:', mediaElements.length);
+        console.log('[Mesa SDK] Muting DOM media elements:', mediaElements.length);
         mediaElements.forEach(el => {
           el.muted = isMuted;
         });
