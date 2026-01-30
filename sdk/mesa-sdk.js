@@ -1,5 +1,6 @@
 (function (window) {
-  const MESA_VERSION = '1.1.0';
+  const MESA_VERSION = '1.2.0';
+  console.log('[Mesa SDK] Loading version', MESA_VERSION);
   const REQUEST_TIMEOUT = 5000;
 
   // Error Codes
@@ -382,6 +383,11 @@
   function receiveMessage(event) {
     const data = event.data;
     if (!data || typeof data !== 'object') return;
+
+    // Log all Mesa-related messages for debugging
+    if (data.type && data.type.startsWith('mesa:')) {
+      console.log('[Mesa SDK] Message received:', data.type, data);
+    }
     
     // Filter out messages not from Mesa Portal (unless local simulation)
     // In a real implementation, we would check event.origin against an allowlist
