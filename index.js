@@ -9,6 +9,12 @@ let c = null;
 let gameOverScreen = null;
 let finalScoreElement = null;
 let playAgainBtn = null;
+let startScreen = null;
+let startBtn = null;
+let mobileInput = null;
+
+// Mobile detection
+const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
 // Game state
 let gameOver = false; // loops game if gameOver = false
@@ -100,6 +106,9 @@ function initDomRefs() {
     gameOverScreen = document.getElementById('gameOverScreen');
     finalScoreElement = document.getElementById('finalScore');
     playAgainBtn = document.getElementById('playAgainBtn');
+    startScreen = document.getElementById('startScreen');
+    startBtn = document.getElementById('startBtn');
+    mobileInput = document.getElementById('mobileInput');
 
     // Sets canvas dimensions
     canvas.width = 1920; // window.innerWidth
@@ -133,12 +142,13 @@ function initGameObjects() {
     lifeFrequency = 0;
 }
 
-// Start the game when page loads
+// Start the game when page loads - shows start screen
 function startGame() {
     console.log('[TypeSpace] === GAME STARTUP ===');
     console.log('[TypeSpace] Environment:', {
         inIframe: window.parent !== window,
         mesaSDKAvailable: !!window.Mesa,
+        isMobile: isMobile,
         userAgent: navigator.userAgent.substring(0, 50) + '...'
     });
 
@@ -148,11 +158,39 @@ function startGame() {
             canvas: !!canvas,
             gameOverScreen: !!gameOverScreen,
             finalScoreElement: !!finalScoreElement,
-            playAgainBtn: !!playAgainBtn
+            playAgainBtn: !!playAgainBtn,
+            startScreen: !!startScreen,
+            startBtn: !!startBtn,
+            mobileInput: !!mobileInput
         });
     } catch (e) {
         console.error('[TypeSpace] FATAL: DOM initialization failed:', e);
         return; // Cannot proceed without DOM
+    }
+
+    // Initialize Mesa SDK (don't wait for it)
+    initMesaSDK();
+
+    console.log('[TypeSpace] Game loaded (v1.4.0 - Start Screen & Mobile Support)');
+
+    // Set up start button click handler
+    if (startBtn) {
+        startBtn.addEventListener('click', beginGame);
+    }
+
+    // Show start screen (it's visible by default via CSS)
+    if (startScreen) {
+        startScreen.style.display = 'flex';
+    }
+}
+
+// Begin the actual game (called when Start button is clicked)
+function beginGame() {
+    console.log('[TypeSpace] === BEGINNING GAME ===');
+
+    // Hide start screen
+    if (startScreen) {
+        startScreen.style.display = 'none';
     }
 
     try {
@@ -163,29 +201,88 @@ function startGame() {
         return;
     }
 
-    console.log('[TypeSpace] Game loaded (Mesa Fix v1.1.0)');
-
-    // Play looped music with comprehensive error handling
+    // Play looped music with comprehensive error handling (user has interacted, so autoplay should work)
     try {
         music = new Audio('./material/audio/spaceRace.mp3');
         music.loop = true;
         music.volume = 0.5; // Start at 50% volume
-        
+
         music.play()
             .then(() => console.log('[Audio] Background music started'))
             .catch((err) => {
-                console.warn('[Audio] Autoplay blocked (will retry on user interaction):', err.name);
+                console.warn('[Audio] Autoplay blocked:', err.name);
             });
     } catch (e) {
         console.error('[Audio] Failed to create Audio object:', e);
         music = null; // Ensure game can continue without music
     }
 
-    // Initialize Mesa SDK (don't wait for it)
-    initMesaSDK();
+    // Set up mobile input handling
+    setupMobileInput();
 
-    // Start the game immediately
+    // Start the game loop
     update();
+}
+
+// Setup mobile keyboard input handling
+function setupMobileInput() {
+    if (!mobileInput) return;
+
+    // Handle input from mobile keyboard
+    mobileInput.addEventListener('input', function(e) {
+        if (gameOver) return;
+
+        const value = mobileInput.value.toUpperCase();
+
+        // Process each character typed
+        if (value.length > 0) {
+            const lastChar = value.charAt(value.length - 1);
+            if (/[A-Z]/.test(lastChar)) {
+                input.addLetter(lastChar);
+            }
+        }
+
+        // Clear the input field
+        mobileInput.value = '';
+    });
+
+    // Handle special keys on mobile (Enter key)
+    mobileInput.addEventListener('keydown', function(e) {
+        if (gameOver) return;
+
+        if (e.key === 'Enter' || e.keyCode === 13) {
+            e.preventDefault();
+            input.checkWord();
+        } else if (e.key === 'Backspace' || e.keyCode === 8) {
+            e.preventDefault();
+            input.deleteLetter();
+        }
+    });
+
+    // Tap on canvas to focus the mobile input (shows keyboard)
+    canvas.addEventListener('click', function() {
+        if (gameOver) return;
+        focusMobileInput();
+    });
+
+    canvas.addEventListener('touchstart', function(e) {
+        if (gameOver) return;
+        focusMobileInput();
+    });
+
+    // Auto-focus on mobile after game starts
+    if (isMobile) {
+        setTimeout(focusMobileInput, 100);
+    }
+}
+
+// Focus the mobile input to show keyboard
+function focusMobileInput() {
+    if (mobileInput && !gameOver) {
+        mobileInput.focus();
+        // Ensure keyboard shows on some devices
+        mobileInput.click();
+    }
 }
 
 
@@ -1061,7 +1158,7 @@ function resetGame() {
     scoreSubmitted = false;
     velocity = 1;
     lifeFrequency = 0;
-    
+
     // Recreate game objects (keep existing key listener, so do NOT call checkForInput again)
     input = new Input();
     score = new Score();
@@ -1069,12 +1166,17 @@ function resetGame() {
     actors = new Actors();
     life = new Life();
     ensureMusicPlaying();
-    
+
     // Hide game over screen
     if (gameOverScreen) {
         gameOverScreen.style.display = 'none';
     }
-    
+
+    // Re-focus mobile input on reset
+    if (isMobile) {
+        setTimeout(focusMobileInput, 100);
+    }
+
     // Restart the game loop
     update();
 }
