@@ -162,6 +162,11 @@ body {
 
 /* Responsive adjustments for mobile */
 @media (max-width: 768px) {
+    /* Hide certain elements on mobile */
+    .hide-mobile {
+        display: none;
+    }
+
     /* Start screen: button at top, smaller text and spacing */
     .start-content {
         display: flex;
@@ -170,14 +175,14 @@ body {
 
     #startBtn {
         order: -1;
-        font-size: 24px;
-        padding: 14px 42px;
-        margin-bottom: 20px;
+        font-size: 19px;
+        padding: 11px 34px;
+        margin-bottom: 16px;
     }
 
     .start-content h1 {
-        font-size: 36px;
-        margin-bottom: 15px;
+        font-size: 29px;
+        margin-bottom: 8px;
     }
 
     .instructions {
@@ -185,13 +190,13 @@ body {
     }
 
     .instructions p {
-        font-size: 16px;
-        margin: 8px 0;
+        font-size: 13px;
+        margin: 6px 0;
     }
 
     .instructions .mobile-hint {
-        font-size: 13px;
-        margin-top: 15px;
+        font-size: 10px;
+        margin-top: 12px;
     }
 
     /* Game over screen adjustments */
