@@ -162,19 +162,39 @@ body {
 
 /* Responsive adjustments for mobile */
 @media (max-width: 768px) {
-    .start-content h1 {
-        font-size: 48px;
-    }
-
-    .instructions p {
-        font-size: 18px;
+    /* Start screen: button at top, smaller text and spacing */
+    .start-content {
+        display: flex;
+        flex-direction: column;
     }
 
     #startBtn {
-        font-size: 28px;
-        padding: 15px 40px;
+        order: -1;
+        font-size: 24px;
+        padding: 14px 42px;
+        margin-bottom: 20px;
     }
 
+    .start-content h1 {
+        font-size: 36px;
+        margin-bottom: 15px;
+    }
+
+    .instructions {
+        margin-bottom: 0;
+    }
+
+    .instructions p {
+        font-size: 16px;
+        margin: 8px 0;
+    }
+
+    .instructions .mobile-hint {
+        font-size: 13px;
+        margin-top: 15px;
+    }
+
+    /* Game over screen adjustments */
     .game-over-content h1 {
         font-size: 48px;
     }
