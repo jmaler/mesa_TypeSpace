@@ -21,6 +21,8 @@ let gameOver = false; // loops game if gameOver = false
 let scoreSubmitted = false; // track if score has been submitted to prevent duplicate submissions
 let velocity = 1;
 let lifeFrequency = 0;
+let keyListenerAdded = false; // prevent duplicate keyboard listeners
+let mobileInputSetup = false; // prevent duplicate mobile input listeners
 
 // Game objects (initialized in initGameObjects)
 let input = null;
@@ -227,6 +229,10 @@ function beginGame() {
 // Setup mobile keyboard input handling
 function setupMobileInput() {
     if (!mobileInput) return;
+
+    // Prevent adding duplicate listeners
+    if (mobileInputSetup) return;
+    mobileInputSetup = true;
 
     // Handle input from mobile keyboard
     mobileInput.addEventListener('input', function(e) {
@@ -1050,12 +1056,19 @@ class Input {
     // Event listener, handle input, deal with letters, backspace, and enter/spacebar
 
     checkForInput() {
+        // Prevent adding duplicate listeners
+        if (keyListenerAdded) return;
+        keyListenerAdded = true;
+
         document.addEventListener('keydown', function(e) {
             // First user interaction: try to enable audio (fixes local autoplay restrictions)
             ensureMusicPlaying();
 
             // Ignore input when game is over
             if (gameOver) return;
+
+            // Skip if input came from mobileInput (it has its own handlers)
+            if (e.target === mobileInput) return;
             
             switch (e.keyCode) {
                 case 13: // enter
